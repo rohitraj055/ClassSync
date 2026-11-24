@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 type IconName =
   | "dashboard"
@@ -112,7 +114,19 @@ const deadlines = [
   { day: "02", month: "DEC", title: "Economics case study", course: "Engineering Economics · Project", color: "amber" },
 ];
 
-function Sidebar({ onNavigate, open }: { onNavigate?: () => void; open?: boolean }) {
+function Sidebar({
+  onNavigate,
+  open,
+  displayName,
+  email,
+  initials,
+}: {
+  onNavigate?: () => void;
+  open?: boolean;
+  displayName: string;
+  email: string;
+  initials: string;
+}) {
   return (
     <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
       <a className="brand" href="#dashboard" onClick={onNavigate} aria-label="ClassSync dashboard">
@@ -152,11 +166,11 @@ function Sidebar({ onNavigate, open }: { onNavigate?: () => void; open?: boolean
           <div className="term-icon"><Icon name="calendar" size={16} /></div>
           <div><span className="term-caption">CURRENT TERM</span><strong>Autumn semester</strong><small>2026 – 2027</small></div>
         </div>
-        <button className="profile-button" type="button">
-          <span className="avatar">RH</span>
-          <span className="profile-copy"><strong>Rohit</strong><small>B.Tech · Computer Science</small></span>
+        <div className="profile-button">
+          <span className="avatar">{initials}</span>
+          <span className="profile-copy"><strong>{displayName}</strong><small>{email}</small></span>
           <span className="profile-menu">···</span>
-        </button>
+        </div>
       </div>
     </aside>
   );
@@ -271,8 +285,35 @@ function DeadlinesCard() {
   );
 }
 
-export default function Dashboard() {
+export default function Dashboard({ displayName, email }: { displayName: string; email: string }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
+  const router = useRouter();
+  const initials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    setLogoutError("");
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setLogoutError("We couldn't log you out. Please try again.");
+      setLoggingOut(false);
+      return;
+    }
+
+    router.replace("/login");
+    router.refresh();
+  }
 
   return (
     <div className="dashboard-shell min-h-screen bg-background text-foreground" id="dashboard">
@@ -284,7 +325,13 @@ export default function Dashboard() {
         <button className="icon-button mobile-bell" type="button" aria-label="Notifications"><Icon name="bell" /></button>
       </div>
       {sidebarOpen && <button className="sidebar-backdrop" type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
-      <Sidebar open={sidebarOpen} onNavigate={() => setSidebarOpen(false)} />
+      <Sidebar
+        open={sidebarOpen}
+        onNavigate={() => setSidebarOpen(false)}
+        displayName={displayName}
+        email={email}
+        initials={initials}
+      />
 
       <main className="main-content">
         <header className="topbar">
@@ -293,15 +340,19 @@ export default function Dashboard() {
             <label className="search-box"><Icon name="search" size={17} /><input type="search" placeholder="Search anything..." aria-label="Search dashboard" /><kbd>⌘ K</kbd></label>
             <button className="icon-button notification-button" type="button" aria-label="Notifications"><Icon name="bell" size={18} /><span /></button>
             <span className="topbar-divider" />
-            <div className="topbar-user"><span className="avatar small-avatar">RH</span><span>Rohit</span><span className="user-caret">⌄</span></div>
+            <div className="topbar-user"><span className="avatar small-avatar">{initials}</span><span>{displayName}</span></div>
+            <button className="logout-button" type="button" onClick={handleLogout} disabled={loggingOut}>
+              {loggingOut ? "Signing out..." : "Sign out"}
+            </button>
           </div>
         </header>
 
         <div className="dashboard-content">
+          {logoutError && <p className="dashboard-auth-error" role="alert">{logoutError}</p>}
           <section className="welcome-row">
             <div>
               <div className="welcome-kicker"><span className="sun-icon">☀</span> MONDAY, NOVEMBER 23, 2026</div>
-              <h1>Good morning, Rohit<span>.</span></h1>
+              <h1>Good morning, {displayName.split(/\s+/)[0]}<span>.</span></h1>
               <p>Here&apos;s what&apos;s happening with your academics.</p>
             </div>
             <div className="campus-chip"><span className="campus-pulse" />IIEST Shibpur <span className="campus-separator">·</span> Student portal</div>
