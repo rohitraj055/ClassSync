@@ -102,8 +102,8 @@ export async function signInAction(
   const email = formValue(formData, "email").trim();
   const password = formValue(formData, "password");
 
-  if (!isOfficialStudentEmail(email)) {
-    return { error: "Use your official @students.iiests.ac.in email address." };
+  if (!email) {
+    return { error: "Enter your email address." };
   }
 
   if (!password) {
@@ -111,28 +111,76 @@ export async function signInAction(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
   if (error) {
     return { error: friendlyAuthError(error.message, "login") };
   }
 
-  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  const { data: claimsData, error: claimsError } =
+    await supabase.auth.getClaims();
 
   if (claimsError) {
-    return { error: "Your login succeeded, but we couldn't verify your session. Please try again." };
+    await supabase.auth.signOut();
+
+    return {
+      error: "Your login succeeded, but we couldn't verify your session. Please try again.",
+    };
   }
 
-  const userId = claimsData?.claims?.sub;
+  const claims = claimsData?.claims;
+  const userId = claims?.sub;
 
   if (typeof userId !== "string") {
-    return { error: "Your login succeeded, but we couldn't identify your account. Please try again." };
+    await supabase.auth.signOut();
+
+    return {
+      error: "We couldn't identify your account. Please try again.",
+    };
   }
 
-  const { profile, error: profileError } = await getStudentProfile(supabase, userId);
+  // Check Primary Super Admin authorization using verified identity.
+  const {
+    data: isPrimaryOwner,
+    error: ownerCheckError,
+  } = await supabase.rpc("is_current_user_primary_owner");
+
+  if (ownerCheckError) {
+    await supabase.auth.signOut();
+
+    return {
+      error: "We couldn't verify your account permissions. Please try again.",
+    };
+  }
+
+  // Primary Super Admin does not need a student dashboard profile.
+  if (isPrimaryOwner === true) {
+    redirect("/admin");
+  }
+
+  // All non-owner accounts must use an official IIEST student email.
+  const verifiedEmail =
+    typeof claims?.email === "string" ? claims.email : "";
+
+  if (!isOfficialStudentEmail(verifiedEmail)) {
+    await supabase.auth.signOut();
+
+    return {
+      error: "Only authorized IIEST student accounts can log in.",
+    };
+  }
+
+  const { profile, error: profileError } =
+    await getStudentProfile(supabase, userId);
 
   if (profileError) {
-    return { error: "Your login succeeded, but we couldn't load your academic profile. Please try again." };
+    return {
+      error: "Your login succeeded, but we couldn't load your academic profile. Please try again.",
+    };
   }
 
   if (!isAcademicProfileComplete(profile)) {
